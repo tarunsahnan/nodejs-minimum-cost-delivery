@@ -9,7 +9,7 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 // Cache with a timeout of 300 seconds (5 minutes)
-const translationCache = new NodeCache({ stdTTL: 300 });
+const minCostCache = new NodeCache({ stdTTL: 300 });
 
 const warehouses = ["L1", "C1", "C2", "C3"];
 // Center stock data
@@ -31,33 +31,10 @@ const distances: SimpleObject<number> = {
 
 app.use(express.json());
 
-function calculate(req: Request, res: Response) {
-  console.log(req.body);
-  const obj: SimpleObject<number> = req.body;
-  // traverse and create weight object
-  const wtObj: { [key: string]: { [key: string]: number } } = {
-    C1: {},
-    C2: {},
-    C3: {},
-  };
-
-  let totalWt = 0;
-
-  Object.keys(obj).forEach((i) => {
-    const item = i.toUpperCase();
-
-    if (Object.keys(centerStock.C1).includes(item)) {
-      totalWt += wtObj.C1[item] = centerStock.C1[item] * obj[i];
-    } else if (Object.keys(centerStock.C2).includes(item)) {
-      totalWt += wtObj.C2[item] = centerStock.C2[item] * obj[i];
-    } else if (Object.keys(centerStock.C3).includes(item)) {
-      totalWt += wtObj.C3[item] = centerStock.C3[item] * obj[i];
-    } else {
-      res.status(400).json({
-        error: `Product ${i} is not available in the warehouse. Please choose a valid product.`,
-      });
-    }
-  });
+function calculate(
+  totalWt: number,
+  wtObj: { [key: string]: { [key: string]: number } }
+) {
   const sumWts: SimpleObject<number> = {
     C1: Object.values(wtObj.C1).reduce(
       (accumulator, currentValue) => accumulator + currentValue,
@@ -141,18 +118,68 @@ function calculate(req: Request, res: Response) {
   const visited: SimpleObject<boolean> = {};
   const min_cost = helper("", 0, 0, visited, {});
 
-  res.json({ min_cost });
+  return min_cost;
 }
 app.post("/calculate-cost", async (req: Request, res: Response) => {
   try {
     if (!req.body) {
-      return res.status(400).json({ error: "Product List is missing" });
+      return res.status(400).json({
+        error: "Product List is missing",
+        errorCode: "producListMissing",
+      });
     }
-    console.log("api", req.body);
-    calculate(req, res);
+
+    // convert payload to Uppercase
+    const upperCasePayload: SimpleObject<number> = {};
+    for (const key in req.body) {
+      upperCasePayload[key.toUpperCase()] = req.body[key];
+    }
+
+    let min_cost = 0;
+    if (minCostCache.has(JSON.stringify(upperCasePayload))) {
+      // found in cache
+      console.log("cache");
+      min_cost = minCostCache.get(JSON.stringify(upperCasePayload)) || 0;
+    } else {
+      // not found in cache
+
+      const wtObj: { [key: string]: { [key: string]: number } } = {
+        C1: {},
+        C2: {},
+        C3: {},
+      };
+      let totalWt = 0;
+      const invalidProducts: Array<string> = [];
+
+      for (const i in req.body) {
+        const item = i.toUpperCase();
+        if (Object.keys(centerStock.C1).includes(item)) {
+          totalWt += wtObj.C1[item] = centerStock.C1[item] * req.body[i];
+        } else if (Object.keys(centerStock.C2).includes(item)) {
+          totalWt += wtObj.C2[item] = centerStock.C2[item] * req.body[i];
+        } else if (Object.keys(centerStock.C3).includes(item)) {
+          totalWt += wtObj.C3[item] = centerStock.C3[item] * req.body[i];
+        } else {
+          invalidProducts.push(i);
+        }
+      }
+
+      if (invalidProducts.length)
+        return res.status(400).json({
+          error: `Product is not available in the warehouse. Please choose a valid product.`,
+          errorCode: "productNotValid",
+          invalidProducts,
+        });
+      min_cost = calculate(totalWt, wtObj);
+    }
+    minCostCache.set(JSON.stringify(upperCasePayload), min_cost);
+
+    res.json({ min_cost });
   } catch (error) {
     console.error("Error:", error);
-    res.status(500).json({ error: "An error occurred." });
+    res
+      .status(500)
+      .json({ error: "An error occurred.", errorCode: "internalServerError" });
   }
 });
 
