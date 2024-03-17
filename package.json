@@ -1,0 +1,25 @@
+{
+  "name": "shortest-distance",
+  "version": "1.0.0",
+  "description": "shortest-distance",
+  "main": "index.ts",
+  "repository": "https://github.com/tarunsahnan/node-translate-api",
+  "author": "Tarun Sahnan",
+  "license": "MIT",
+  "scripts": {
+    "start": "nodemon --exec ts-node index.ts",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@types/node-cache": "^4.2.5",
+    "express": "4.17.1",
+    "node-cache": "^5.1.2"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.11.20",
+    "nodemon": "2.0.15",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+}
